@@ -33,7 +33,8 @@ const byte thresh = 100;
 // Global Variables
 //-----------------------------------------------------------------------------
 
-word CurBandData[nSegments][nBand + 1]; //current band data
+int CurBandData[nSegments][nBand + 1]; //current band data
+bool bAnalyse = true;
 
 //-------------------------------------------------------------------------
 // GetSerial
@@ -50,7 +51,7 @@ bool PollBands(bool init)
 {
   bool IsPos, Collecting;
   static unsigned long prevTime;
-  byte band, seg, val1, val2;
+  byte band, seg, val1, val2, i;
   const byte hyster = 20;
   static int zero = 500;
   static byte curSegment = 255;
@@ -142,11 +143,26 @@ bool PollBands(bool init)
   }
 
   if (Collecting) {  
-    PrintCurBandData();
-    delay(500);
+    Serial.println("a");
+    SendUtterance(CurBandData);
+    if (bAnalyse)
+      AnalyseUtterance(CurBandData);
   }
 
   return Collecting;
+}
+
+//-----------------------------------------------------------------------------
+// AnalyseUtterance
+//-----------------------------------------------------------------------------
+void AnalyseUtterance(int Utterance[nSegments][nBand+1]) {
+  int i,dist;
+  char buffer[30];
+  
+  i = FindBestUtterance(Utterance,&dist);  
+  strcpy_P(buffer, (char *)pgm_read_word(&(sUtterances[i])));
+  Serial.println(i);
+  Serial.println(buffer);
 }
 
 //-----------------------------------------------------------------------------
@@ -154,12 +170,27 @@ bool PollBands(bool init)
 //-----------------------------------------------------------------------------
 void PrintCurBandData(void)
 {
-  byte seg, i, band;
+  byte seg, band;
 
   Serial.println("a");
   for (seg = 0; seg < nSegments; seg++) {
     for (band = 0; band <= nBand; band++) {
       Serial.print(CurBandData[seg][band]);
+      Serial.print(" ");
+    }
+    Serial.println("");
+  }
+}
+
+//-----------------------------------------------------------------------------
+// SendUtterance
+//-----------------------------------------------------------------------------
+void SendUtterance(int Utterance[nSegments][nBand+1])
+{
+  byte seg,band;
+  for (seg = 0; seg < nSegments; seg++) {
+    for (band = 0; band <= nBand; band++) {
+      Serial.print(Utterance[seg][band]);
       Serial.print(" ");
     }
     Serial.println("");
@@ -188,7 +219,7 @@ int ShiftedDistance(int Utterance[nSegments][nBand+1], byte TemplateUtt, int8_t 
     for (band = 0; band <= nBand; band++) {
       aMean = pgm_read_word(&Templates[TemplateUtt][seg][band].mean);
       aSD = pgm_read_word(&Templates[TemplateUtt][seg][band].sd);
-      Dist += importance*abs(((long)aUtterance[seg][band])-aMean)*1000 / (50+aSD);
+      Dist = constrain(Dist+importance*abs(((long)aUtterance[seg][band])-aMean)*1000 / (50+aSD),-10000,+10000);
     }
   }
 
@@ -291,30 +322,12 @@ int FindBestUtterance(int Utterance[nSegments][nBand+1], int *BestDist) {
 }
 
 //-----------------------------------------------------------------------------
-// SendUtterance
-//-----------------------------------------------------------------------------
-void SendUtterance(int Utterance[nSegments][nBand+1])
-{
-  byte seg,band;
-  for (seg = 0; seg < nSegments; seg++) {
-    for (band = 0; band <= nBand; band++) {
-      Serial.print(Utterance[seg][band]);
-      Serial.print(" ");
-    }
-    Serial.println("");
-  }
-}
-
-//-----------------------------------------------------------------------------
 // CheckSerial
 //-----------------------------------------------------------------------------
 void CheckSerial(void)
 {
   byte seg,band,i,j;
   static int Utterance[nSegments][nBand+1];
-  int Utterance2[nSegments][nBand+1];
-  int dist;
-  char buffer[30];
 
   if ( Serial.available() > 0 ) {
     switch (GetSerial()) {
@@ -325,31 +338,33 @@ void CheckSerial(void)
             Utterance[seg][band] += 256*GetSerial();
           }
         }
-        Serial.println('u');
-        SendUtterance(Utterance);          
         break;
-      case 's': 
-        ShiftUtterance(Utterance,Utterance2,(int8_t)GetSerial());
-        Serial.println('s');
-        SendUtterance(Utterance2);          
-        break;
-      case 'd': 
-        Serial.println('d');
-        i = (int8_t)GetSerial();
-        j = (int8_t)GetSerial();
-        Serial.println(ShiftedDistance(Utterance, i, j));
-        break;
+//      case 's': 
+//        ShiftUtterance(Utterance,Utterance2,(int8_t)GetSerial());
+//        Serial.println('s');
+//        SendUtterance(Utterance2);          
+//        break;
+//      case 'd': 
+//        Serial.println('d');
+//        i = (int8_t)GetSerial();
+//        j = (int8_t)GetSerial();
+//        Serial.println(ShiftedDistance(Utterance, i, j));
+//        break;
+//      case 'b': 
+//        Serial.println('b');
+//        Serial.println(FindBestShift(Utterance, GetSerial()));
+//        break;
       case 'b': 
-        Serial.println('b');
-        Serial.println(FindBestShift(Utterance, GetSerial()));
+Serial.println('b');
+        bAnalyse = false; // do not analyse utterances - we're just collecting data
+        break;
+      case 'c': 
+Serial.println('c');
+        bAnalyse = true; // analyse utterances
         break;
       case 'f': 
         Serial.println('f');
-        i = FindBestUtterance(Utterance,&dist);
-        strcpy_P(buffer, (char *)pgm_read_word(&(sUtterances[i])));
-        Serial.print(buffer);
-        Serial.print(" ");
-        Serial.println(i);
+        AnalyseUtterance(Utterance);
         break;
     }    
   }
